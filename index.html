@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' stroke='%2300ff46' stroke-width='2' fill='none'/%3E%3Cpath d='M16 2 L16 30 M2 16 L30 16 M5 7 L27 25 M27 7 L5 25' stroke='%2300ff46' stroke-width='0.8' opacity='0.4'/%3E%3Ccircle cx='16' cy='16' r='1.5' fill='%2300ff46'/%3E%3C/svg%3E">
+<title>ANON — Find Yourself</title>
+<!-- 关键资源预加载：提前启动下载，缩短首屏等待 -->
+<link rel="preload" href="libs/globe.gl.min.js" as="script" fetchpriority="high">
+<link rel="preload" href="libs/three.min.js" as="script" fetchpriority="high">
+<link rel="preload" href="assets/earth-day-2k.jpg" as="image" fetchpriority="high">
+<link rel="preload" href="assets/earth-night-2k.jpg" as="image" fetchpriority="low">
+<link rel="preload" href="assets/earth-water.png" as="image" fetchpriority="low">
+<link rel="preconnect" href="https://ipapi.co" crossorigin>
+<link rel="dns-prefetch" href="https://ipwho.is">
+<link rel="dns-prefetch" href="https://ipinfo.io">
+<style>
+/* ================ LOCAL FONTS ================ */
+@font-face {
+  font-family: 'Anton SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(fonts/v1_4UaBrEBBsgltGn71sxLm.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(fonts/v17_i7dPIFZifjKcF5UAWdDRUEY.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Space Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(fonts/v17_i7dMIFZifjKcF5UAWdDRaPpZYFI.ttf) format('truetype');
+}
+
+/* ================ RESET ================ */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  background: #000;
+  color: #fff;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+  width: 100%;
+  height: 100%;
+  /* iOS 刘海屏安全区 */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+/* 黑客风 selection 颜色 */
+::selection { background: #00ff46; color: #000; }
+::-webkit-scrollbar { display: none; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+a { color: inherit; text-decoration: none; cursor: pointer; }
+
+/* ================ MATRIX RAIN BACKGROUND ================ */
+#matrixCanvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+}
+/* Subtle scanline overlay on top of matrix */
+.scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0,0,0,0) 0,
+    rgba(0,0,0,0) 3px,
+    rgba(0,0,0,0.18) 4px,
+    rgba(0,0,0,0) 5px
+  );
+  mix-blend-mode: multiply;
+}
+/* 移动端：全屏 mix-blend-mode 每帧都要重新合成，会明显拖慢 GPU，改用普通叠加 */
+@media (max-width: 768px) {
+  .scanlines { mix-blend-mode: normal; opacity: 0.5; }
+}
+/* Vignette */
+.vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.75) 100%);
+}
+
+/* ================ NAVBAR ================ */
+.navbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 72px;
+  z-index: 50;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  padding-top: env(safe-area-inset-top);
+  height: calc(72px + env(safe-area-inset-top));
+}
+.navbar.visible { opacity: 1; }
+
+.logo-pill {
+  height: 44px;
+  padding: 0 18px;
+  background: rgba(255,255,255,0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+.logo-pill:hover { transform: scale(1.02); background: rgba(255,255,255,0.14); border-color: rgba(0,255,70,0.25); }
+.logo-pill:active { transform: scale(0.98); }
+.logo-pill svg { width: 18px; height: 18px; }
+.logo-pill .brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #fff;
+  text-transform: uppercase;
+}
+.logo-pill .brand-sub {
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  color: rgba(0,255,70,0.55);
+  text-transform: uppercase;
+}
+
+@media (max-width: 639px) {
+  .navbar { height: 56px; padding: 0 14px; }
+  .logo-pill { height: 36px; padding: 0 14px; border-radius: 10px; gap: 8px; }
+  .logo-pill svg { width: 15px; height: 15px; }
+  .logo-pill .brand-name { font-size: 13px; letter-spacing: 0.1em; }
+  .logo-pill .brand-sub { display: none; }
+  .logo-pill { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(10,20,30,0.9); }
+}
+
+/* ================ HERO / LAYOUT ================ */
+.hero {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 96px 20px 40px;
+  z-index: 2;
+  pointer-events: none;
+}
+@media (min-width: 640px) { .hero { padding: 112px 32px 56px; } }
+@media (min-width: 768px) { .hero { padding: 112px 48px 56px; } }
+
+/* Giant watermark ANONYMOUS (fixed layer behind the globe) */
+.hero-watermark {
+  position: fixed;
+  left: 0; right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  text-align: center;
+  font-family: "Anton SC", sans-serif;
+  font-size: clamp(80px, 28vw, 640px);
+  text-transform: uppercase;
+  letter-spacing: -6px;
+  opacity: 0.045;
+  color: #00ff46;
+  z-index: 1;
+  pointer-events: none;
+  line-height: 1;
+  user-select: none;
+}
+@media (max-width: 480px) {
+  .hero-watermark { letter-spacing: -2px; font-size: clamp(64px, 28vw, 240px); }
+}
+
+/* Footer-style bottom bar: location signal + local time */
+.hero-bottom-bar {
+  position: absolute;
+  bottom: 16px; left: 0; right: 0;
+  padding: 0 20px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  color: rgba(0,255,70,0.32);
+  text-transform: uppercase;
+  font-family: "Space Mono", monospace;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 1.2s ease 1.2s;
+  pointer-events: none;
+}
+.hero-bottom-bar.visible { opacity: 1; }
+.hero-bottom-bar em { font-style: normal; opacity: 0.55; }
+.hero-bottom-bar b { font-weight: 400; color: rgba(0,255,70,0.62); }
+.bar-loc, .bar-clock { display: inline-flex; align-items: center; gap: 10px; }
+.bar-clock { color: rgba(0,255,70,0.55); }
+#liveClock { color: rgba(0,255,70,0.75); font-variant-numeric: tabular-nums; text-shadow: 0 0 8px rgba(0,255,70,0.35); }
+/* 呼吸灯圆点：表示信号在线 */
+.pulse-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #00ff46;
+  box-shadow: 0 0 6px rgba(0,255,70,0.8);
+  animation: pulseDot 2.2s ease-in-out infinite;
+  flex: none;
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 0.35; transform: scale(0.8); }
+  50%      { opacity: 1;    transform: scale(1); }
+}
+@media (min-width: 640px) { .hero-bottom-bar { padding: 0 32px; font-size: 11px; bottom: 24px; } }
+/* 移动端：两端收缩 */
+@media (max-width: 480px) {
+  .hero-bottom-bar {
+    bottom: 10px;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+  .bar-loc { max-width: 58%; overflow: hidden; white-space: nowrap; }
+  #locValue { overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* ================ 3D EARTH (globe.gl, real sunlight) ================ */
+#globeViz {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  /* 入场动画初始状态：藏到屏幕下方、缩小、透明。
+     JS 在 playIntro 触发时给本元素加 .globe-in，GPU composite 层平滑过渡。
+     完全不影响 Globe 内部 3D 渲染管线，也不需要改 Globe 相机 API。*/
+  transform: translateY(30vh) scale(0.3);
+  opacity: 0;
+  transform-origin: center bottom;
+  will-change: transform, opacity;
+  transition:
+    opacity 1.1s ease 0.15s,
+    transform 1.4s cubic-bezier(0.22, 1, 0.36, 1) 0.05s;
+}
+#globeViz.globe-in {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+#globeViz canvas { display: block; }
+/* globe.gl 自带的操作提示文字（"Left-click: rotate..."）：隐藏 */
+.scene-nav-info { display: none !important; }
+
+</style>
+</head>
+<body>
+
+<!-- ================ MATRIX RAIN ================ -->
+<canvas id="matrixCanvas"></canvas>
+<div class="scanlines"></div>
+<div class="vignette"></div>
+
+<!-- ================ GIANT WATERMARK (behind globe) ================ -->
+<div class="hero-watermark">ANONYMOUS</div>
+
+<!-- ================ 3D EARTH (REAL SUNLIGHT) ================ -->
+<div id="globeViz"></div>
+
+<!-- ================ NAVBAR ================ -->
+<nav class="navbar" id="navbar">
+  <div class="logo-pill">
+    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <!-- simplified V-for-vendetta emblem -->
+      <path d="M24 6 L38 42 L10 42 Z" stroke="#00ff46" stroke-width="2" fill="none" stroke-linejoin="round"/>
+      <path d="M24 6 L24 42" stroke="#00ff46" stroke-width="1.5" opacity="0.6"/>
+      <circle cx="24" cy="6" r="2" fill="#00ff46"/>
+    </svg>
+    <span class="brand-name">ANON</span>
+    <span class="brand-sub">// find yourself</span>
+  </div>
+
+</nav>
+
+<!-- ================ HERO ================ -->
+<section class="hero" id="hero">
+  <div class="hero-bottom-bar" id="heroBar">
+    <span class="bar-loc" id="locSlot">
+      <i class="pulse-dot"></i>
+      <em>SIG</em>
+      <b id="locValue">SCANNING···</b>
+    </span>
+    <span class="bar-clock">
+      <em>LOCAL</em>
+      <span id="liveClock">--:--:--</span>
+    </span>
+  </div>
+</section>
+
+<script src="libs/three.min.js"></script>
+<script src="libs/globe.gl.min.js"></script>
+
+<script>
+/* =========================================================
+   MATRIX RAIN BACKGROUND
+   ========================================================= */
+(function(){
+  const canvas = document.getElementById('matrixCanvas');
+  const ctx = canvas.getContext('2d');
+  let w, h, cols, drops;
+
+  const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*+-=/<>?[]{}|';
+  const fontSize = 15;
+  const fontStr = '200 ' + fontSize + 'px sans-serif';
+  const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const dpr = isTouch ? Math.min(window.devicePixelRatio || 1, 2) : (window.devicePixelRatio || 1);
+
+  function resize() {
+    w = window.innerWidth;
+    h = window.innerHeight;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cols = Math.floor(w / fontSize);
+    drops = new Array(cols).fill(0).map(() => Math.random() * -20);
+  }
+
+  // 分遍批量绘制：把 fillStyle / shadow 的状态切换从逐列循环里提到循环外
+  function draw() {
+    if (document.hidden) return;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.11)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.font = fontStr;
+
+    // 第 1 遍：头部字符 + 微光
+    ctx.fillStyle = 'rgba(0,255,70,0.45)';
+    ctx.shadowColor = '#00ff46';
+    ctx.shadowBlur = 1;
+    for (let i = 0; i < cols; i++) {
+      ctx.fillText(CHARS[(Math.random() * CHARS.length) | 0], i * fontSize, drops[i] * fontSize);
+    }
+
+    // 第 2 遍：拖尾（无发光）
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(0,255,70,0.17)';
+    for (let i = 0; i < cols; i++) {
+      ctx.fillText(CHARS[(Math.random() * CHARS.length) | 0], i * fontSize, (drops[i] - 1) * fontSize);
+    }
+    ctx.fillStyle = 'rgba(0,255,70,0.07)';
+    for (let i = 0; i < cols; i++) {
+      ctx.fillText(CHARS[(Math.random() * CHARS.length) | 0], i * fontSize, (drops[i] - 2) * fontSize);
+    }
+
+    // 第 3 遍：推进下落
+    for (let i = 0; i < cols; i++) {
+      if (drops[i] * fontSize > h && Math.random() > 0.975) drops[i] = 0;
+      drops[i]++;
+    }
+  }
+
+  resize();
+  window.addEventListener('resize', resize, { passive: true });
+
+  // rAF 驱动：与显示刷新同步，后台标签页自动暂停（比 setInterval 更省电、更平滑）
+  let lastFrame = 0;
+  (function loop(ts) {
+    requestAnimationFrame(loop);
+    if (document.hidden) return;
+    if (ts - lastFrame < 50) return; // 节流到约 20fps
+    lastFrame = ts;
+    draw();
+  })(0);
+})();
+
+/* =========================================================
+   REAL SUNLIGHT EARTH (globe.gl + three.js)
+   - 真实太阳位置（天文算法实时计算）→ 昼夜明暗分界
+   - 白天：NASA 蓝色大理石贴图；夜晚：城市灯光自发光
+   - 海面太阳镜面反射高光
+   - 流动弧线 + 数据节点 + 大气层光晕
+   - 自动缓慢旋转 + 拖拽阻尼交互
+   ========================================================= */
+(function(){
+  if (!window.Globe) { console.warn('globe.gl not loaded'); return; }
+
+  const el = document.getElementById('globeViz');
+  const RAD = Math.PI / 180;
+
+  // ===== GeoJSON geometry 严格校验 =====
+  // globe.gl polygonsData 在遇到空 coordinates / 异常 geometry 时会内部崩溃
+  // （如中国 MultiPolygon 里的空子 polygon 数组），手机 Safari 错误处理更严格，
+  // 会把整个 globe 渲染线程挂掉导致页面白屏。这里只放行 globe.gl 能安全处理的类型。
+  function isValidRing(ring) {
+    return Array.isArray(ring) && ring.length >= 3;
+  }
+  function isValidGeometry(g) {
+    if (!g || !Array.isArray(g.coordinates) || g.coordinates.length === 0) return false;
+    if (g.type === 'Polygon') {
+      return g.coordinates.every(isValidRing);
+    }
+    if (g.type === 'MultiPolygon') {
+      return g.coordinates.every(poly =>
+        Array.isArray(poly) && poly.length >= 1 && poly.every(isValidRing)
+      );
+    }
+    return false; // GeometryCollection / Point / LineString 等一律拒绝
+  }
+  const safeGeoFilter = f => f.geometry && isValidGeometry(f.geometry);
+  let world = null;
+
+  // ===== 真实太阳直射点计算（subsolar point，精度约 0.01°）=====
+  function getSunPosition(date) {
+    const dayMs = 86400000, J1970 = 2440588, J2000 = 2451545;
+    const d = date.getTime() / dayMs - 0.5 + J1970 - J2000;          // 自 J2000 历元起的天数
+    const e = (23.439 - 0.00000036 * d) * RAD;                       // 黄赤交角
+    const M = (357.5291 + 0.98560028 * d) % 360;                     // 太阳平近点角
+    const L = (280.460 + 0.9856474 * d) % 360;                       // 太阳平黄经
+    const lambda = (L + 1.915 * Math.sin(M * RAD) + 0.020 * Math.sin(2 * M * RAD)) * RAD;
+    const lat = Math.asin(Math.sin(e) * Math.sin(lambda)) / RAD;     // 直射纬度 = 太阳赤纬
+    const ra = Math.atan2(Math.cos(e) * Math.sin(lambda), Math.cos(lambda)) / RAD; // 赤经
+    const gmst = (280.46061837 + 360.98564736629 * d) % 360;         // 格林尼治恒星时
+    const lng = (((ra - gmst) % 360) + 540) % 360 - 180;             // 直射经度
+    return { lat: lat, lng: lng };
+  }
+
+  // ===== 贴图异步加载工具 =====
+  const loader = new THREE.TextureLoader();
+  const loadTex = url => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+
+  // ===== 立即初始化地球（不等贴图，深蓝底色先出现）=====
+  const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  try {
+    world = Globe({
+      rendererConfig: {
+        alpha: true,
+        antialias: !isMobile,   // 移动端关抗锯齿省 GPU
+        pixelRatio: isMobile ? Math.min(window.devicePixelRatio || 1, 1.5) : (window.devicePixelRatio || 1),
+      },
+      animateIn: false,
+      showNavInfo: false  // 关闭 Globe 底部 "Left-click: rotate..." 操作提示
+    })(el)
+      .backgroundColor('rgba(0,0,0,0)')
+      .showAtmosphere(true)
+      .atmosphereColor('#6ab7ff')
+      .atmosphereAltitude(0.16)
+      .showGraticules(!isMobile);  // 移动端关经纬网格（小屏看不清）
+
+    // 移动端禁用缩放（手指捏合容易误触），保留拖拽旋转
+    if (isMobile) world.enableZoom(false);
+    // 强制隐藏 globe.gl 自带的操作提示浮层
+    // config 里的 showNavInfo 在 v2.34.4 有时不生效，这里 JS + DOM 双重兜底
+    try {
+      const hideNav = () => {
+        const navInfo = el.querySelector('.scene-nav-info');
+        if (navInfo) navInfo.style.display = 'none';
+      };
+      hideNav();            // Globe init 同步创建 DOM，应该能找到
+      setTimeout(hideNav, 500);  // 兜底：如果 Globe 延迟创建
+    } catch (_) {}
+  } catch (e) {
+    console.error('globe.gl init failed — page fallback to non-3D mode:', e);
+    // 给 body 打标记，IP 定位等异步逻辑据此跳过 globe 相关操作
+    world = null;
+    return; // 直接退出，不让后续 world 引用触发 ReferenceError
+  }
+
+  // 材质：先用深蓝海洋底色，贴图下载完热替换
+  const mat = world.globeMaterial();
+  mat.color = new THREE.Color(0x0b1d33);
+  mat.specular = new THREE.Color(0x555555);
+  mat.shininess = 14;
+  mat.transparent = false; // 强制不透明，避免 Matrix 雨透出球体
+  mat.opacity = 1;
+  mat.depthWrite = true;
+  mat.needsUpdate = true;
+
+    // ===== 真实太阳光照：替换默认灯光（默认相机跟随光会抹掉昼夜）=====
+    const scene = world.scene();
+    [...scene.children].forEach(o => { if (o.isLight) scene.remove(o); });
+    const cam = world.camera();
+    [...cam.children].forEach(o => { if (o.isLight) cam.remove(o); });
+
+    const sunLight = new THREE.DirectionalLight(0xffffff, 2.4);
+    const ambient = new THREE.AmbientLight(0x2e4160, 0.7);
+    scene.add(sunLight);
+    scene.add(ambient);
+
+    function updateSun() {
+      const sun = getSunPosition(new Date());
+      const c = world.getCoords(sun.lat, sun.lng);
+      sunLight.position.set(c.x, c.y, c.z).normalize().multiplyScalar(500);
+    }
+    updateSun();
+    setInterval(updateSun, 60000); // 太阳位置每分钟实时刷新
+
+    // ===== 流动弧线 + 数据节点 =====
+    const cities = [
+      { name: 'New York',   lat: 40.71,  lng: -74.01 },
+      { name: 'London',     lat: 51.51,  lng: -0.13 },
+      { name: 'Tokyo',      lat: 35.68,  lng: 139.69 },
+      { name: 'Sydney',     lat: -33.87, lng: 151.21 },
+      { name: 'Sao Paulo',  lat: -23.55, lng: -46.63 },
+      { name: 'Dubai',      lat: 25.27,  lng: 55.30 },
+      { name: 'Mumbai',     lat: 19.08,  lng: 72.88 },
+      { name: 'Berlin',     lat: 52.52,  lng: 13.40 },
+      { name: 'Toronto',    lat: 43.65,  lng: -79.38 },
+      { name: 'Moscow',     lat: 55.75,  lng: 37.62 },
+      { name: 'Cairo',      lat: 30.04,  lng: 31.24 },
+      { name: 'Singapore',  lat: 1.35,   lng: 103.82 },
+      { name: 'Los Angeles',lat: 34.05,  lng: -118.24 },
+      { name: 'Bangkok',    lat: 13.76,  lng: 100.50 },
+      { name: 'Lagos',      lat: 6.52,   lng: 3.38 },
+      { name: 'Buenos Aires',lat: -34.60,lng: -58.38 },
+    ];
+
+    // 生成 arcs：每个城市连 2-3 个其他城市
+    function buildArcs(list) {
+      const arr = [];
+      list.forEach((c, i) => {
+        const n = 2 + (i % 2);
+        for (let k = 1; k <= n; k++) {
+          const t = list[(i + k * 3 + 1) % list.length];
+          arr.push({ startLat: c.lat, startLng: c.lng, endLat: t.lat, endLng: t.lng });
+        }
+      });
+      return arr;
+    }
+
+    // 弧线/节点视觉参数只配置一次；原先每次 renderArcs 都重设 arcDashInitialGap，
+    // 会重新随机所有弧线的相位，导致 IP 结果返回瞬间线条整体“闪”一下。
+    world.arcColor(['#00ff46', 'rgba(0,255,70,0.08)'])
+      .arcStroke(0.35)
+      .arcDashLength(0.35)
+      .arcDashGap(0.9)
+      .arcDashAnimateTime(2800)
+      .arcDashInitialGap(d => {
+        // 用弧线端点做确定性哈希：同一条弧线相位恒定，追加“我”的定位点时不再乱跳
+        const n = Math.sin(d.startLat * 133.7 + d.startLng * 91.3 + d.endLat * 47.9 + d.endLng * 23.1) * 43758.5453;
+        return (n - Math.floor(n)) * 2;
+      })
+      .arcAltitudeAutoScale(0.4)
+      .pointColor(d => d._isMe ? '#ff6b35' : '#00ff46')
+      .pointAltitude(0.008)
+      .pointRadius(d => d._isMe ? 0.45 : 0.25);
+
+    // 弧线数据一次性生成，并保留同一批对象引用。
+    // globe.gl 内部按「对象引用」做数据 join（默认 key = d => d）：
+    // 如果每次都用 buildArcs() 重建全新对象，digest 会销毁所有弧线网格再重建 → 整批闪烁。
+    let arcsData = buildArcs(cities);
+    world.arcsData(arcsData).pointsData(cities);
+
+    // 追加「我」的定位点 + 其流动弧线：只往里「新增」对象，不改动已有对象的引用
+    function addMeToGlobe(me) {
+      if (!world) return;
+      try {
+        cities.push(me);
+        // 旧节点对象引用不变，只新增 me 一个点
+        world.pointsData(cities);
+        // 只生成 me 的弧线并 concat 到已有数组末尾，旧弧线对象原样保留
+        const anchors = [cities[0], cities[5], cities[10], cities[3]];
+        const meArcs = anchors.map(t => ({ startLat: me.lat, startLng: me.lng, endLat: t.lat, endLng: t.lng }));
+        arcsData = arcsData.concat(meArcs);
+        world.arcsData(arcsData);
+      } catch (e) {
+        console.warn('addMeToGlobe skipped:', e.message);
+      }
+    }
+
+    // ===== 异步：读取访问者 IP 位置（多源自动切换，全部 https，避免混合内容拦截）=====
+    (async () => {
+      const providers = [
+        { url: 'https://ipapi.co/json/',      pick: g => [g.latitude, g.longitude, g.city || g.region || g.country_name] },
+        { url: 'https://ipwho.is/',           pick: g => [g.latitude, g.longitude, g.city || g.region] },
+        { url: 'https://ipinfo.io/json',      pick: g => { const [a, b] = (g.loc || '').split(','); return [a, b, g.city]; } },
+      ];
+      let geo = null;
+      for (const p of providers) {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 4000);
+          const res = await fetch(p.url, { signal: ctrl.signal });
+          clearTimeout(timer);
+          const g = await res.json();
+          const [lat, lng, name] = p.pick(g);
+          if (lat && lng && !g.error && g.success !== false) {
+            geo = { lat: +lat, lng: +lng, name };
+            break;
+          }
+        } catch (e) { /* 换下一个源 */ }
+      }
+      if (!geo) {
+        // 全部源失败：底部栏显示离线状态，入场动画回退到默认视角
+        const locValue = document.getElementById('locValue');
+        if (locValue) locValue.textContent = 'SIGNAL LOST';
+        playIntro(defaultPov);
+        return; // 不影响已有弧线
+      }
+
+      const me = { name: geo.name || 'You', lat: geo.lat, lng: geo.lng, _isMe: true };
+      addMeToGlobe(me);
+      // 底部栏显示定位结果
+      const locValue = document.getElementById('locValue');
+      if (locValue) locValue.textContent = me.name.toUpperCase();
+      // 入场动画：从小（远）一次 zoom-in 到目标位置（单段，无二次跳动）
+      // 桌面端：直接飞到 IP 定位城市居中；移动端：到默认视角（不聚焦）
+      playIntro(isMobile ? defaultPov : { lat: me.lat, lng: me.lng, altitude: 2.8 });
+    })();
+
+    // 国家边界线改为贴图就绪后再加载（见下方 Promise 链），避免撞帧
+
+    // ===== 初始视角：昼半球偏侧，可见明暗分界线 =====
+    // 移动端 altitude 更大（相机更远），小屏上地球不会撑满
+    const sun0 = getSunPosition(new Date());
+    const baseAlt = isMobile ? 3.2 : 2.3;
+    const introMs = isMobile ? 1200 : 1800;
+    const defaultPov = { lat: 18, lng: sun0.lng - 55, altitude: baseAlt };
+
+    // 初始远距离瞬切（小地球），等待 IP 定位结果决定最终 zoom-in 目标
+    world.pointOfView({ lat: defaultPov.lat, lng: defaultPov.lng, altitude: baseAlt * 1.9 }, 0);
+
+    // 入场动画：从小一次过渡到目标（全站仅一次）
+    let introDone = false;
+    function playIntro(target) {
+      if (introDone || !world) return;
+      introDone = true;
+      clearTimeout(introFallback);
+      requestAnimationFrame(() => {
+        // CSS 入场：让 #globeViz 从屏幕底部滑入 + 从小到大（GPU composite，零开销）
+        el.classList.add('globe-in');
+        try { world.pointOfView(target, introMs); } catch (e) {}
+      });
+    }
+
+    // 兜底：IP 定位 3 秒无结果，则过渡到默认视角，避免用户干等小球
+    const introFallback = setTimeout(() => playIntro(defaultPov), 3000);
+
+    // ===== 自动缓慢旋转 + 拖拽阻尼 =====
+    const controls = world.controls();
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.4;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 150;
+    controls.maxDistance = 600;
+
+    // ===== 响应尺寸 + 视角距离自适应（防抖；仅跨尺寸档位时调整，保留用户当前朝向）=====
+    const sizeBucket = () => (isMobile ? (window.innerWidth < 480 ? 'xs' : 'm') : 'd');
+    let lastBucket = sizeBucket();
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      world.width(el.clientWidth).height(el.clientHeight);
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const b = sizeBucket();
+        if (b === lastBucket) return;
+        lastBucket = b;
+        const a = isMobile ? (b === 'xs' ? 3.4 : 3.0) : 2.3;
+        const pov = world.pointOfView();
+        world.pointOfView({ lat: pov.lat, lng: pov.lng, altitude: a }, 600);
+      }, 200);
+    }, { passive: true });
+
+    // ===== 国界线数据：初始化即并行 fetch（不占首屏渲染时序），应用时等贴图就绪 =====
+    // 注意 world.geojson 带 UTF-8 BOM，直接 .json() 某些老 WebView 会炸
+    const geoReady = fetch('world.geojson')
+      .then(r => r.text().then(txt => JSON.parse(txt.replace(/^\uFEFF/, ''))))
+      .catch(() => null);
+
+    // ===== 贴图后台加载：白天贴图优先单独就位，夜景/海面随后补齐 =====
+    const setTexSRGB = t => {
+      if ('colorSpace' in t) t.colorSpace = THREE.SRGBColorSpace;
+      else if ('encoding' in t) t.encoding = THREE.sRGBEncoding;
+    };
+
+    // 白天贴图一到位就立即显示（不再等夜景/高光），缩短"深蓝球→有贴图地球"的等待
+    const dayReady = loadTex('assets/earth-day-2k.jpg');
+    dayReady.then(dayTex => {
+      setTexSRGB(dayTex);
+      mat.map = dayTex;
+      mat.color = new THREE.Color(0xffffff); // 恢复白色，呈现贴图原色
+      mat.needsUpdate = true;
+    }).catch(() => {});
+
+    // 夜景城市灯光 + 海面高光：并行加载，到位即补上
+    Promise.all([
+      loadTex('assets/earth-night-2k.jpg'),
+      loadTex('assets/earth-water.png'),
+    ]).then(([nightTex, waterTex]) => {
+      setTexSRGB(nightTex);
+      setTexSRGB(waterTex);
+      mat.emissive = new THREE.Color(0xffffff);
+      mat.emissiveMap = nightTex;
+      mat.emissiveIntensity = 1.5;
+      mat.specularMap = waterTex;
+      mat.needsUpdate = true;
+    }).catch(() => {});
+
+    // 国界线：白天贴图 + 边界数据都就绪后应用（错开材质热替换）
+    Promise.all([dayReady, geoReady]).then(([, geo]) => {
+      if (!geo || !Array.isArray(geo.features) || !world) return;
+      try {
+        world.polygonsData(geo.features.filter(safeGeoFilter))
+          .polygonAltitude(0.01)
+          .polygonCapColor(() => 'rgba(0,0,0,0)')
+          .polygonSideColor(() => 'rgba(0,0,0,0)')
+          .polygonStrokeColor(() => 'rgba(255,255,255,0.18)');
+      } catch (e) {
+        console.warn('polygonsData skipped (globe.gl internal error):', e.message);
+      }
+    }).catch(() => {});
+})();
+
+/* =========================================================
+   LIVE CLOCK
+   ========================================================= */
+(function(){
+  const el = document.getElementById('liveClock');
+  function tick() {
+    const d = new Date();
+    const pad = n => n.toString().padStart(2,'0');
+    const s = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    if (el) el.textContent = s;
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+/* =========================================================
+   DISABLE RIGHT-CLICK CONTEXT MENU
+   ========================================================= */
+document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+document.addEventListener('dragstart', function(e){ e.preventDefault(); });
+
+/* =========================================================
+   HERO ENTRANCE — fade in after short delay
+   ========================================================= */
+(function(){
+  const navbar = document.getElementById('navbar');
+  const heroBar = document.getElementById('heroBar');
+  setTimeout(() => {
+    navbar.classList.add('visible');
+  }, 800);
+  setTimeout(() => {
+    if (heroBar) heroBar.classList.add('visible');
+  }, 1400);
+})();
+
+/* =========================================================
+   GLOBE ENTRANCE — 独立兜底：确保地球最终可见
+   主路径：Globe IIFE 内 playIntro 正常触发（约 2-3 秒）
+   兜底：  Globe 初始化失败（try-catch 提前 return）→ playIntro 不存在
+          → 这里 2.5 秒后强制加 .globe-in，让地球至少从 CSS 层面显现
+   ========================================================= */
+(function(){
+  const globeViz = document.getElementById('globeViz');
+  if (!globeViz) return;
+  // 3 秒后强制显现（只加一次，已加过的 playIntro 不会重复触发动画）
+  setTimeout(() => {
+    if (!globeViz.classList.contains('globe-in')) {
+      globeViz.classList.add('globe-in');
+    }
+  }, 2500);
+})();
+</script>
+</body>
+</html>
